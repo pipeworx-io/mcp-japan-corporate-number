@@ -1,7 +1,7 @@
 {
   "name": "@pipeworx/mcp-japan-corporate-number",
-  "version": "0.1.0",
-  "description": "japan-corporate-number — Japan's National Tax Agency (国税庁) corporate",
+  "version": "0.1.1",
+  "description": "japan-corporate-number — Japan's National Tax Agency (国税庁) corporate number register (法人番号公表サイト). Fleet #2928.",
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
@@ -26,7 +26,7 @@
     "@cloudflare/workers-types": "^4.20260405.1"
   },
   "pipeworx": {
-    "sourceHash": "v1-6b0f74496ad097f994c8cb7b96cfd447260ba4d69711dd4d6a12d9d5fa11f680",
-    "sourceCommit": "32aab95bb6e89ecc0f84597573d405a8a22cb609"
+    "sourceHash": "v1-bed024c2a43d4c16fa70cb59dd61b8e25fb713a145db517d344f8e20669db1a4",
+    "sourceCommit": "33741fe6d9ba71856e73fa683c73572d1ddf2e93"
   }
 }

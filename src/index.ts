@@ -62,16 +62,19 @@ interface McpToolExport {
  */
 import {
   checkDigitValid,
-  type CorpRow,
   dataAsOf,
   findByNumber,
+  isLatinQuery,
   isValidFormat,
+  queryCore,
   requireDb,
   rowCount,
   searchByName,
+  type SearchRow,
   shapeCorp,
   SOURCE,
 } from './store.js';
+import { GLEIF_SOURCE, gleifBridge } from './gleif-bridge.js';
 
 const tools: McpToolExport['tools'] = [
   {
@@ -90,7 +93,7 @@ const tools: McpToolExport['tools'] = [
   {
     name: 'jp_company_search',
     description:
-      'Search Japan\'s National Tax Agency corporate-number register by name — Japanese (kanji/katakana, substring match) or the official English name/katakana reading NTA holds for some entities. Optionally filter by prefecture (Japanese name, English name, or 2-digit code). Returns each match\'s corporate number, name, kind and address so you can pick the right one, then call jp_corporate_number for full detail. Covers 5.8M registered entities: companies, government bodies, NPOs, foundations.',
+      'Search Japan\'s National Tax Agency corporate-number register by name — Japanese (kanji/katakana, substring match; 株式会社/(株)/㈱/有限会社/合同会社 accepted as prefix or suffix), the official English name/katakana reading NTA holds for some entities, or the English name GLEIF holds for entities with an LEI ("Sony Group", "Toyota Motor Corporation"). Optionally filter by prefecture (Japanese name, English name, or 2-digit code). Returns each match\'s corporate number, name, kind and address so you can pick the right one, then call jp_corporate_number for full detail. Covers 5.8M registered entities: companies, government bodies, NPOs, foundations.',
     summary: 'Search Japan\'s NTA corporate-number register by Japanese or romanised company name.',
     inputSchema: {
       type: 'object' as const,
@@ -150,8 +153,13 @@ async function searchTool(db: ReturnType<typeof requireDb>, args: Record<string,
   if (!name) throw new Error('name is required');
   const limit = clamp(args.limit, 1, 50, 10);
   const prefecture = args.prefecture != null && args.prefecture !== '' ? String(args.prefecture) : undefined;
-  const asOf = await dataAsOf(db);
-  const rows: CorpRow[] = await searchByName(db, { query: name, prefecture, limit });
+  // GLEIF bridge (fleet #3020): English names NTA never published ("Sony
+  // Group", "Toyota Motor Corporation") and which of many namesakes is the
+  // well-known one. Runs alongside the register read; fail-open.
+  const bridgeQuery = isLatinQuery(name) ? name.normalize('NFKC').trim() : queryCore(name);
+  const [asOf, bridge] = await Promise.all([dataAsOf(db), bridgeQuery ? gleifBridge(bridgeQuery) : Promise.resolve(null)]);
+  const rows: SearchRow[] = await searchByName(db, { query: name, prefecture, limit, bridge: bridge?.hits });
+  const nameBridge = bridge ? { source: GLEIF_SOURCE, status: bridge.status, matched: bridge.hits.length } : null;
   if (!rows.length) {
     return {
       found: false,
@@ -159,7 +167,8 @@ async function searchTool(db: ReturnType<typeof requireDb>, args: Record<string,
       query: name,
       prefecture: prefecture ?? null,
       message: `No entity in the register matched ${JSON.stringify(name)}${prefecture ? ` in ${prefecture}` : ''}.`,
-      hint: 'Japanese substring search needs no exact match, but romanised search only works for the subset of entities NTA published an English name/reading for.',
+      hint: 'Japanese substring search needs no exact match. A romanised name matches the English names NTA published, the romanised katakana reading, or an English name GLEIF holds for an entity with an LEI.',
+      name_bridge: nameBridge,
       data_as_of: asOf,
       source: SOURCE,
     };
@@ -169,7 +178,12 @@ async function searchTool(db: ReturnType<typeof requireDb>, args: Record<string,
     query: name,
     prefecture: prefecture ?? null,
     returned: rows.length,
-    results: rows.map(shapeCorp),
+    results: rows.map((r) => ({
+      ...shapeCorp(r),
+      lei: r.lei ?? null,
+      matched_via: r.lei ? 'gleif_lei_bridge' : 'register_name',
+    })),
+    name_bridge: nameBridge,
     data_as_of: asOf,
     source: SOURCE,
   };

@@ -15,6 +15,7 @@
  * refresh.sh and build-local-db.mjs, never in anything a caller reads.
  */
 import { resolvePrefectureCode } from './prefectures.js';
+import type { BridgeHit } from './gleif-bridge.js';
 
 /** The slice of Cloudflare's D1Database this pack uses, declared here so the
  *  pack needs no workers-types and a test can pass a node:sqlite stub. */
@@ -130,16 +131,62 @@ export function coreName(name: string): string {
   }
   return folded.toLowerCase();
 }
+/** Abbreviated legal forms a caller types but the register never stores
+ *  (NTA records the full 株式会社 etc.): (株) also arrives as ㈱ and （株）,
+ *  both of which NFKC folds to "(株)". Query-side only (fleet #3020) — the
+ *  loader's coreName keys stay as they are, so this cannot desync them. */
+const ABBREVIATED_FORMS = [
+  '(株)', '(有)', '(同)', '(名)', '(資)', '(合)',
+  '(一社)', '(一財)', '(公社)', '(公財)', '(特非)', '(医)', '(福)',
+];
+/** English legal forms, stripped from a romanised query so "Toyota Motor
+ *  Corporation" compares as "toyota motor" against English names and GLEIF
+ *  names alike. Trailing only. */
+const EN_FORMS = /[\s,]+(corporation|corp|company|co|co\s*,?\s*ltd|ltd|limited|inc|incorporated|k\s*k|kabushiki\s+kaisha|godo\s+kaisha|llc)\.?$/i;
+
+export function isLatinQuery(q: string): boolean {
+  return /[a-z]/i.test(q) && !/[\u3040-\u30ff\u3400-\u9fff]/.test(q);
+}
+
+/** The search key for a caller's query: full and abbreviated Japanese legal
+ *  forms stripped as prefix or suffix, NFKC-folded, lowercased, English legal
+ *  forms stripped from a romanised query. */
+export function queryCore(query: string): string {
+  let q = foldWidth(query);
+  for (const a of ABBREVIATED_FORMS) {
+    if (q.startsWith(a)) q = foldWidth(q.slice(a.length));
+    else if (q.endsWith(a)) q = foldWidth(q.slice(0, q.length - a.length));
+  }
+  q = coreName(q);
+  let prev = '';
+  while (prev !== q) {
+    prev = q;
+    q = q.replace(EN_FORMS, '').replace(/[\s,.]+$/, '');
+  }
+  return q;
+}
+
+/** Comparable form of an English/GLEIF name: lowercased, legal form dropped,
+ *  punctuation collapsed. */
+function englishKey(name: string): string {
+  return queryCore(name).replace(/[.,]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
 /** Escape for an FTS5 trigram phrase MATCH. */
 function ftsPhrase(s: string): string {
   return `"${s.replace(/"/g, '""')}"`;
 }
 
+export interface SearchRow extends CorpRow {
+  /** Present when the row was reached through the GLEIF name bridge. */
+  lei?: string;
+}
+
 export async function searchByName(
   db: D1Like,
-  opts: { query: string; prefecture?: string; limit: number },
-): Promise<CorpRow[]> {
-  const folded = coreName(opts.query);
+  opts: { query: string; prefecture?: string; limit: number; bridge?: BridgeHit[] },
+): Promise<SearchRow[]> {
+  const folded = queryCore(opts.query);
   if (!folded) return [];
   // The register's own prefecture_en/prefecture columns are per-ENTITY, not
   // per-prefecture: prefecture_en is populated only for the 15,352 entities
@@ -195,10 +242,10 @@ export async function searchByName(
     END`;
   const tierParams = [folded, folded, folded, folded, folded, folded];
   if ([...folded].length >= 3) {
-    sql = `SELECT ${selectCols} FROM corp_fts f JOIN corporations c ON c.id = f.rowid WHERE corp_fts MATCH ?`;
+    sql = `SELECT ${selectCols}, c.name_kana_romaji FROM corp_fts f JOIN corporations c ON c.id = f.rowid WHERE corp_fts MATCH ?`;
     params.push(ftsPhrase(folded));
   } else {
-    sql = `SELECT ${selectCols} FROM corporations c WHERE c.name_core LIKE ?`;
+    sql = `SELECT ${selectCols}, c.name_kana_romaji FROM corporations c WHERE c.name_core LIKE ?`;
     params.push(`%${folded}%`);
   }
   if (prefCode) {
@@ -210,8 +257,58 @@ export async function searchByName(
     ? ` ORDER BY ${tierSql}, bm25(corp_fts) LIMIT ?`
     : ` ORDER BY ${tierSql}, length(c.name_core) LIMIT ?`;
   params.push(opts.limit);
-  const r = await db.prepare(sql).bind(...params).all<CorpRow>();
-  return r.results;
+  const r = await db.prepare(sql).bind(...params).all<CorpRow & { name_kana_romaji?: string | null }>();
+  const bridge = opts.bridge ?? [];
+  if (!bridge.length) return r.results.map(stripRomaji);
+
+  // GLEIF bridge (fleet #3020). Fetch the bridged register rows by number —
+  // the unique index, independent of the FTS index — under the same
+  // prefecture filter, then merge: lower name tier first; on a tie, an
+  // entity GLEIF returned outranks one it did not (GLEIF holds LEIs for the
+  // entity a caller most likely means — Sharp Corporation, not one of the
+  // 100+ other シャープ-named companies); active before closed.
+  const numbers = [...new Set(bridge.map((h) => h.corporate_number))];
+  let bsql = `SELECT ${selectCols}, c.name_kana_romaji FROM corporations c WHERE c.corporate_number IN (${numbers.map(() => '?').join(',')})`;
+  const bparams: unknown[] = [...numbers];
+  if (prefCode) {
+    bsql += ` AND c.prefecture_code = ?`;
+    bparams.push(prefCode);
+  }
+  const br = await db.prepare(bsql).bind(...bparams).all<CorpRow & { name_kana_romaji?: string | null }>();
+  const bridgeRank = new Map(numbers.map((n, i) => [n, i]));
+  const hitByNumber = new Map(bridge.map((h) => [h.corporate_number, h]));
+  const tierOf = (row: CorpRow & { name_kana_romaji?: string | null }): number => {
+    const keys = [row.name_core, (row.name_en ?? '').toLowerCase(), row.name_kana_romaji ?? ''].filter(Boolean);
+    const hit = hitByNumber.get(row.corporate_number);
+    if (hit) keys.push(...hit.names.map(englishKey), ...hit.names.map((n) => queryCore(n)));
+    if (row.name_en) keys.push(englishKey(row.name_en));
+    if (keys.some((k) => k === folded)) return 0;
+    if (keys.some((k) => k.startsWith(folded))) return 1;
+    return 2;
+  };
+  const seen = new Set<string>();
+  const merged = [...br.results, ...r.results].filter((row) => {
+    if (seen.has(row.corporate_number)) return false;
+    seen.add(row.corporate_number);
+    return true;
+  });
+  const keyed = merged.map((row, i) => ({
+    row,
+    tier: tierOf(row),
+    bridged: bridgeRank.get(row.corporate_number) ?? Number.MAX_SAFE_INTEGER,
+    closed: row.closure_date != null ? 1 : 0,
+    i,
+  }));
+  keyed.sort((a, b) => a.tier - b.tier || a.bridged - b.bridged || a.closed - b.closed || a.i - b.i);
+  return keyed.slice(0, opts.limit).map(({ row }) => {
+    const hit = hitByNumber.get(row.corporate_number);
+    return hit ? { ...stripRomaji(row), lei: hit.lei } : stripRomaji(row);
+  });
+}
+
+function stripRomaji(row: CorpRow & { name_kana_romaji?: string | null }): CorpRow {
+  const { name_kana_romaji: _r, ...rest } = row;
+  return rest;
 }
 
 /** Corporate-number check-digit, verified against real NTA data 2026-10-11 —

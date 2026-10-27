@@ -7,7 +7,7 @@ English name when NTA holds one, address, corporate kind (stock company,
 LLC, government body, NPO, etc.) and status (active, or closed/merged with
 the narrative NTA published). 5,837,980 entities as of the 2026-09-30 cut.
 
-Part of [Pipeworx](https://pipeworx.io) — an MCP gateway connecting AI agents to 1769+ live data sources. This is an independent, unofficial integration — not affiliated with, endorsed by, or published by the upstream provider.
+Part of [Pipeworx](https://pipeworx.io) — an MCP gateway connecting AI agents to 1882+ live data sources. This is an independent, unofficial integration — not affiliated with, endorsed by, or published by the upstream provider.
 
 `gBizINFO` (`mcps/gbizinfo`, METI) is a **different** source hanging richer
 government records — procurement, subsidies, patents, financials — off the
@@ -23,9 +23,12 @@ government-record detail once you have a number.
   check-digit failure, or a correctly-formed number simply not in the
   register — never an empty object.
 - `jp_company_search(name, prefecture?, limit?)` — search by Japanese name
-  (substring, corporate-suffix-insensitive) or, for the subset of entities
-  NTA published one for, an English name/katakana reading. `prefecture`
-  accepts a Japanese name, an English name, or a 2-digit code.
+  (substring; 株式会社, (株), ㈱, 有限会社, 合同会社 etc. accepted as prefix or
+  suffix), the English name/katakana reading NTA published for some
+  entities, or the English name GLEIF holds for entities with an LEI.
+  `prefecture` accepts a Japanese name, an English name, or a 2-digit code.
+  Results carry `lei` and `matched_via` (`register_name` or
+  `gleif_lei_bridge`); the response carries `name_bridge.status`.
 
 ## Auth
 
@@ -99,12 +102,26 @@ a malformed or impossible number gets a specific `bad_format` /
 
 ## "Japanese and romanised matching" — what this is and is not
 
+**GLEIF name bridge (fleet #3020).** NTA published an English name for only
+15,352 of 5.8M entities — not for Sharp, Sony Group or Toyota Motor. Every
+search therefore also makes one live call to GLEIF (Global Legal Entity
+Identifier Foundation) LEI records, filtered to Japan. For a Japanese entity
+GLEIF records its 会社法人等番号 under registration authority RA000412; the
+法人番号 is that 12-digit number with NTA's check digit prepended, so each
+GLEIF hit resolves to a register row by number. Bridged rows rank ahead of
+register-only rows at the same name tier, which is what puts Sharp
+Corporation first among the 100+ シャープ-named companies. The bridge is a
+live proxy call (nothing is copied) and fails open: if GLEIF is down the
+search answers from the register alone and says `name_bridge.status:
+"unavailable"`.
+
 `jp_company_search` matches a single FTS5 trigram index over the Japanese
 core name (corporate-suffix stripped, e.g. "株式会社" / "K.K." both fold
 away), the English name, and the katakana reading — whichever of these NTA
 actually published for that entity. It is **not** a transliterator: a
 company with no registered English name/kana will not be found by a
-romanised query that NTA never recorded. `prefecture` is resolved against a
+romanised query that NTA never recorded — except through the GLEIF bridge
+below. `prefecture` is resolved against a
 static 47-prefecture table (`src/prefectures.ts`) so it works by Japanese
 name, English name, or code regardless of whether the matched *company*
 registered an English address — filtering on the register's own
@@ -164,7 +181,7 @@ directly, instead of just this one's:
 }
 ```
 
-Both URLs reach the same gateway and the same 1769+ data sources. The
+Both URLs reach the same gateway and the same 1882+ data sources. The
 only difference is which pack's tools are listed **directly**; `ask_pipeworx`
 reaches all of them from either one.
 

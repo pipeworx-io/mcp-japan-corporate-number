@@ -1,0 +1,42 @@
+[
+  {
+    "name": "jp_corporate_number",
+    "description": "Look up one Japanese corporation/organization by its 13-digit 法人番号 (corporate number) in Japan's National Tax Agency register: legal name, katakana reading and English name when NTA holds one, address, corporate-kind (stock company, LLC, government body, etc.) and status (active, or closed/merged with the date and successor number). Validates the check digit before looking up. Use for \"what company is corporate number 1234567890123\", verifying a Japanese business is real, or resolving a 法人番号 found elsewhere.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "number": {
+          "type": "string",
+          "description": "The 13-digit 法人番号 (corporate number), digits only, e.g. \"1000012160153\"."
+        }
+      },
+      "required": [
+        "number"
+      ]
+    }
+  },
+  {
+    "name": "jp_company_search",
+    "description": "Search Japan's National Tax Agency corporate-number register by name — Japanese (kanji/katakana, substring match; 株式会社/(株)/㈱/有限会社/合同会社 accepted as prefix or suffix), the official English name/katakana reading NTA holds for some entities, or the English name GLEIF holds for entities with an LEI (\"Sony Group\", \"Toyota Motor Corporation\"). Optionally filter by prefecture (Japanese name, English name, or 2-digit code). Returns each match's corporate number, name, kind and address so you can pick the right one, then call jp_corporate_number for full detail. Covers 5.8M registered entities: companies, government bodies, NPOs, foundations.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Company/organization name or part of it, in Japanese or (when NTA published one) English — e.g. \"トヨタ\", \"Toyota\", \"株式会社\"."
+        },
+        "prefecture": {
+          "type": "string",
+          "description": "Optional prefecture filter: Japanese name (\"北海道\"), English name (\"Hokkaido\"), or 2-digit code (\"01\")."
+        },
+        "limit": {
+          "type": "number",
+          "description": "Maximum results (1-50, default 10)."
+        }
+      },
+      "required": [
+        "name"
+      ]
+    }
+  }
+]

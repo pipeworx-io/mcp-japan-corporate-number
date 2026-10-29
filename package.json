@@ -1,12 +1,20 @@
 {
   "name": "@pipeworx/mcp-japan-corporate-number",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "japan-corporate-number — Japan's National Tax Agency (国税庁) corporate number register (法人番号公表サイト). Fleet #2928.",
   "type": "module",
-  "main": "src/index.ts",
-  "types": "src/index.ts",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./tools.json": "./tools.json",
+    "./package.json": "./package.json"
+  },
   "bin": {
     "mcp-japan-corporate-number": "bin/cli.js"
+  },
+  "files": ["bin/", "lib/", "tools.json", "server.json"],
+  "engines": {
+    "node": ">=18"
   },
   "keywords": ["mcp", "mcp-server", "model-context-protocol", "pipeworx", "japan-corporate-number"],
   "license": "MIT",
@@ -14,19 +22,12 @@
     "type": "git",
     "url": "git+https://github.com/pipeworx-io/mcp-japan-corporate-number.git"
   },
-  "scripts": {
-    "typecheck": "tsc --noEmit"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0",
-    "tsx": "^4.19.0"
-  },
-  "devDependencies": {
-    "typescript": "^5.9.3",
-    "@cloudflare/workers-types": "^4.20260405.1"
-  },
+  "mcpName": "io.github.pipeworx-io/japan-corporate-number",
   "pipeworx": {
-    "sourceHash": "v1-bed024c2a43d4c16fa70cb59dd61b8e25fb713a145db517d344f8e20669db1a4",
-    "sourceCommit": "33741fe6d9ba71856e73fa683c73572d1ddf2e93"
+    "mode": "gateway",
+    "slug": "japan-corporate-number",
+    "gatewaySlug": "japan-corporate-number",
+    "sourceHash": "v1-c7952e8a30692ef99db3caf5a7cb91a164ef7b584dd1f4aee0205c66681fb782",
+    "sourceCommit": "4844029e402d6bd2fe735add8abf6d46735f8ed5"
   }
 }

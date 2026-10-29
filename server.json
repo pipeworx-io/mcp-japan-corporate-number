@@ -3,7 +3,7 @@
   "name": "io.github.pipeworx-io/japan-corporate-number",
   "title": "Japan Corporate Number",
   "description": "japan-corporate-number — Japan's National Tax Agency (国税庁) corporate number register (法人番号公表サイト).…",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "websiteUrl": "https://pipeworx.io/packs/japan-corporate-number",
   "repository": {
     "url": "https://github.com/pipeworx-io/mcp-japan-corporate-number",

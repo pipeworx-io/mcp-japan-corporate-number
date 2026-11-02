@@ -1,6 +1,6 @@
 {
   "name": "@pipeworx/mcp-japan-corporate-number",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "japan-corporate-number — Japan's National Tax Agency (国税庁) corporate number register (法人番号公表サイト). Fleet #2928.",
   "type": "module",
   "main": "lib/index.js",
@@ -27,7 +27,7 @@
     "mode": "gateway",
     "slug": "japan-corporate-number",
     "gatewaySlug": "japan-corporate-number",
-    "sourceHash": "v1-c7952e8a30692ef99db3caf5a7cb91a164ef7b584dd1f4aee0205c66681fb782",
-    "sourceCommit": "4844029e402d6bd2fe735add8abf6d46735f8ed5"
+    "sourceHash": "v1-0a3f561fa20603c51e410b53250fef5ef44f313446756b91e6a39a0282c1bc2b",
+    "sourceCommit": "236b0a46d91f343fe094da9f499c378e88f78312"
   }
 }
